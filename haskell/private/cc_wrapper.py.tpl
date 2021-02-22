@@ -324,7 +324,19 @@ class Args:
                 raise RuntimeError("Unhandled _prev_ld_arg '{}'.".format(self._prev_ld_arg))
 
         if forward_ld_args:
-            if use_xlinker:
+            # Workaround for https://github.com/bazelbuild/bazel/pull/13044
+            # Bazel 4.0.0's own cc_wrapper expands response files. However, it
+            # fails to make exceptions for legitimate arguments starting with
+            # `@` on macOS, such as `-install_name @rpath/...` or `-rpath
+            # @loader_path/...`.
+            # We use `-Wl,...` syntax for these arguments as a workaround.
+            starts_with_at = any(
+                ld_arg.startswith("@rpath") or
+                ld_arg.startswith("@loader_path") or
+                ld_arg.startswith("@executable_path")
+                for ld_arg in forward_ld_args
+            )
+            if use_xlinker and not starts_with_at:
                 out.extend(
                     arg
                     for ld_arg in forward_ld_args
@@ -518,11 +530,14 @@ def shorten_path(input_path):
 
 def rpath_args(rpaths):
     """Generate arguments for RUNPATHs."""
+    # Workaround for https://github.com/bazelbuild/bazel/pull/13044
+    # Bazel 4.0.0's own cc_wrapper expands response files. However, it
+    # fails to make exceptions for legitimate arguments starting with
+    # `@` on macOS, such as `-install_name @rpath/...` or `-rpath
+    # @loader_path/...`.
+    # We use `-Wl,...` syntax for these arguments as a workaround.
     for rpath in rpaths:
-        yield "-Xlinker"
-        yield "-rpath"
-        yield "-Xlinker"
-        yield rpath
+        yield "-Wl,-rpath,{}".format(rpath)
 
 
 # --------------------------------------------------------------------
